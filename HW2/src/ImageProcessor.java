@@ -1,5 +1,7 @@
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Queue;
+import java.util.LinkedList;
 import java.awt.*;
 import java.awt.image.*;
 import java.io.File;
@@ -14,9 +16,11 @@ public class ImageProcessor {
     JLabel label;
     BufferedImage inputImage;
     List<BufferedImage> objects = new ArrayList<>();
+    List<Rectangle> allDetectedObjects = new ArrayList<>();
     int width = 640;
     int height = 480;
     double THRESHOLD = 0.1;
+    final int INTENSITY_THRESHOLD = 32;
 
     private BufferedImage processImage() {
         BufferedImage image = null;
@@ -25,14 +29,128 @@ public class ImageProcessor {
         for (BufferedImage object : objects) {
             int[][] objectHistogram = createHistogram(object, true);
             double similarity = compareHistograms(inputImageHistogram, objectHistogram);
-            System.out.println("Similarity: " + similarity);
             if (similarity > THRESHOLD) {
                 BufferedImage probabilityImage = backProjectHistogram(inputImageHistogram, objectHistogram);
+                BufferedImage refinedImage = refineImage(probabilityImage);
+                List<Rectangle> detectedObjects = findBoundingBoxes(refinedImage);
+                allDetectedObjects.addAll(detectedObjects);
                 image = probabilityImage;
             }
         }
 
         return image;
+    }
+
+    private BufferedImage refineImage(BufferedImage probabilityImage) {
+        BufferedImage thresholdedImage = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_BINARY);
+        for (int w = 0; w < width; w++) {
+            for (int h = 0; h < height; h++) {
+                int intensity = new Color(probabilityImage.getRGB(w, h)).getRed();
+                if (intensity >= INTENSITY_THRESHOLD) {
+                    thresholdedImage.setRGB(w, h, Color.WHITE.getRGB());
+                } else {
+                    thresholdedImage.setRGB(w, h, Color.BLACK.getRGB());
+                }
+            }
+        }
+
+        int kernelSize = 10;
+        BufferedImage refinedImage = new BufferedImage(width, height,
+                BufferedImage.TYPE_BYTE_BINARY);
+        for (int w = kernelSize; w < width - kernelSize; w++) {
+            for (int h = kernelSize; h < height - kernelSize; h++) {
+                boolean isEroded = true;
+                for (int i = -kernelSize; i <= kernelSize; i++) {
+                    for (int j = -kernelSize; j <= kernelSize; j++) {
+                        Color color = new Color(thresholdedImage.getRGB(w + i, h + j));
+                        if (color.equals(Color.BLACK)) {
+                            isEroded = false;
+                            break;
+                        }
+                    }
+                    if (!isEroded)
+                        break;
+                }
+                refinedImage.setRGB(w, h, isEroded ? Color.WHITE.getRGB() : Color.BLACK.getRGB());
+            }
+        }
+
+        BufferedImage dilatedImage = new BufferedImage(width, height,
+                BufferedImage.TYPE_BYTE_BINARY);
+        for (int w = kernelSize; w < width - kernelSize; w++) {
+            for (int h = kernelSize; h < height - kernelSize; h++) {
+                boolean isDilated = false;
+                for (int i = -kernelSize; i <= kernelSize; i++) {
+                    for (int j = -kernelSize; j < kernelSize; j++) {
+                        Color color = new Color(refinedImage.getRGB(w + i, h + j));
+                        if (color.equals(Color.WHITE)) {
+                            isDilated = true;
+                            break;
+                        }
+                    }
+                    if (isDilated)
+                        break;
+                }
+                dilatedImage.setRGB(w, h, isDilated ? Color.WHITE.getRGB() : Color.BLACK.getRGB());
+            }
+        }
+
+        return dilatedImage;
+        // return refinedImage;
+    }
+
+    private List<Rectangle> findBoundingBoxes(BufferedImage probabilityImage) {
+        boolean[][] visited = new boolean[width][height];
+        List<Rectangle> boundingBoxes = new ArrayList<>();
+
+        for (int w = 0; w < width; w++) {
+            for (int h = 0; h < height; h++) {
+                if (!visited[w][h]) {
+                    Rectangle boundingBox = BFS(w, h, probabilityImage, visited);
+                    if (boundingBox != null) {
+                        boundingBoxes.add(boundingBox);
+                    }
+                }
+            }
+        }
+
+        return boundingBoxes;
+    }
+
+    private Rectangle BFS(int startW, int startH, BufferedImage probabilityImage, boolean[][] visited) {
+        int minW = startW, maxW = startW;
+        int minH = startH, maxH = startH;
+        Queue<int[]> q = new LinkedList<>();
+        q.offer(new int[] { startW, startH });
+
+        while (!q.isEmpty()) {
+            int[] coord = q.poll();
+            int w = coord[0], h = coord[1];
+
+            if (w < 0 || w >= width || h < 0 || h >= height)
+                continue;
+            if (visited[w][h])
+                continue;
+            int intensity = new Color(probabilityImage.getRGB(w, h)).getRed();
+            if (intensity <= INTENSITY_THRESHOLD)
+                continue;
+
+            visited[w][h] = true;
+            minW = Math.min(w, minW);
+            maxW = Math.max(w, maxW);
+            minH = Math.min(h, minH);
+            maxH = Math.max(h, maxH);
+
+            q.offer(new int[] { w - 1, h });
+            q.offer(new int[] { w + 1, h });
+            q.offer(new int[] { w, h - 1 });
+            q.offer(new int[] { w, h + 1 });
+        }
+
+        if (minW == maxW || minH == maxH) {
+            return null;
+        }
+        return new Rectangle(minW, minH, maxW - minW, maxH - minH);
     }
 
     private BufferedImage backProjectHistogram(int[][] inputImageHistogram, int[][] objectHistogram) {
@@ -54,7 +172,7 @@ public class ImageProcessor {
 
                 // Normalize to the range 0-255
                 int intensity = (int) (255 * avgRatio);
-                intensity = Math.min(255, Math.max(0, intensity)); // Clamp to 0-255
+                intensity = Math.min(255, Math.max(0, intensity));
 
                 Color newColor = new Color(intensity, intensity, intensity);
                 backProjectedImage.setRGB(w, h, newColor.getRGB());
@@ -167,6 +285,15 @@ public class ImageProcessor {
         }
     }
 
+    private void drawBoundingBoxes(BufferedImage image, List<Rectangle> boundingBoxes) {
+        Graphics2D g = image.createGraphics();
+        g.setColor(Color.BLUE);
+        for (Rectangle box : boundingBoxes) {
+            g.drawRect(box.x, box.y, box.width, box.height);
+        }
+        g.dispose();
+    }
+
     private void showImages(BufferedImage image) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
@@ -213,6 +340,7 @@ public class ImageProcessor {
         }
 
         System.out.println("Displaying image...");
-        imProc.showImages(image);
+        imProc.drawBoundingBoxes(imProc.inputImage, imProc.allDetectedObjects);
+        imProc.showImages(imProc.inputImage);
     }
 }
