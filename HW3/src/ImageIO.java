@@ -13,39 +13,89 @@ public class ImageIO {
         // Empty constructor
     }
 
-    public static BufferedImage floatToBufferedImage(float[][][] floatImage) {
-        byte[][][] byteImage = floatToByte(floatImage);
-        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_3BYTE_BGR);
+    public static byte[][][] initByteArray(String imgPath) {
+        BufferedImage bufferedImage = getBufferedImage(imgPath);
+        byte[][][] image = new byte[HEIGHT][WIDTH][3];
 
-        byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
-        int index = 0;
-        for (int y = 0; y < HEIGHT; y++) {
-            for (int x = 0; x < WIDTH; x++) {
-                for (int c = 0; c < 3; c++) {
-                    targetPixels[index++] = byteImage[x][y][c];
+        try {
+            for (int h = 0; h < HEIGHT; h++) {
+                for (int w = 0; w < WIDTH; w++) {
+                    Color color = new Color(bufferedImage.getRGB(w, h));
+                    image[h][w][0] = (byte) color.getRed();
+                    image[h][w][1] = (byte) color.getGreen();
+                    image[h][w][2] = (byte) color.getBlue();
                 }
             }
+        } catch (Exception e) {
+            System.err.println("Error reading image: " + e.getMessage());
+            return null;
         }
 
         return image;
     }
 
-    private static byte[][][] floatToByte(float[][][] floatImage) {
-        byte[][][] image = new byte[WIDTH][HEIGHT][3];
+    private static BufferedImage getBufferedImage(String imgPath) {
+        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+        try {
+            File file = new File(imgPath);
+            RandomAccessFile raf = new RandomAccessFile(file, "r");
+            raf.seek(0);
 
-        for (int x = 0; x < WIDTH; x++) {
+            long len = WIDTH * HEIGHT * 3;
+            byte[] bytes = new byte[(int) len];
+
+            raf.read(bytes);
+
+            int ind = 0;
             for (int y = 0; y < HEIGHT; y++) {
-                for (int channel = 0; channel < 3; channel++) {
-                    image[x][y][channel] = (byte) Math.min(255, Math.max(0, Math.round(floatImage[x][y][channel])));
+                for (int x = 0; x < WIDTH; x++) {
+                    byte r = bytes[ind];
+                    byte g = bytes[ind + HEIGHT * WIDTH];
+                    byte b = bytes[ind + HEIGHT * WIDTH * 2];
+
+                    int pix = 0xff000000 | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+                    // int pix = ((a << 24) + (r << 16) + (g << 8) + b);
+                    image.setRGB(x, y, pix);
+                    ind++;
                 }
             }
+
+            raf.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+
         return image;
     }
 
-    public static void showImages(float[][][] floatImage) {
-        BufferedImage image = floatToBufferedImage(floatImage);
+    public static BufferedImage byteToBufferedImage(byte[][][] byteImage) {
+        BufferedImage bufferedImage = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
 
+        for (int h = 0; h < HEIGHT; h++) {
+            for (int w = 0; w < WIDTH; w++) {
+                // Extract the RGB values.
+                int red = byteImage[h][w][0] & 0xFF; // Convert byte to unsigned int
+                int green = byteImage[h][w][1] & 0xFF;
+                int blue = byteImage[h][w][2] & 0xFF;
+
+                // Create an RGB integer with the format 0xRRGGBB
+                int rgb = new Color(red, green, blue).getRGB();
+
+                bufferedImage.setRGB(w, h, rgb);
+            }
+        }
+
+        return bufferedImage;
+    }
+
+    public static void showImage(byte[][][] byteImage) {
+        BufferedImage image = byteToBufferedImage(byteImage);
+        showImage(image);
+    }
+
+    public static void showImage(BufferedImage image) {
         frame = new JFrame();
         GridBagLayout gLayout = new GridBagLayout();
         frame.getContentPane().setLayout(gLayout);
@@ -68,40 +118,4 @@ public class ImageIO {
         frame.pack();
         frame.setVisible(true);
     }
-
-    public void readImageRGB(int WIDTH, int HEIGHT, String imgPath, BufferedImage img) {
-        try {
-            int frameLength = WIDTH * HEIGHT * 3;
-
-            File file = new File(imgPath);
-            RandomAccessFile raf = new RandomAccessFile(file, "r");
-            raf.seek(0);
-
-            long len = frameLength;
-            byte[] bytes = new byte[(int) len];
-
-            raf.read(bytes);
-
-            int ind = 0;
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int x = 0; x < WIDTH; x++) {
-                    byte r = bytes[ind];
-                    byte g = bytes[ind + HEIGHT * WIDTH];
-                    byte b = bytes[ind + HEIGHT * WIDTH * 2];
-
-                    int pix = 0xff000000 | ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-                    // int pix = ((a << 24) + (r << 16) + (g << 8) + b);
-                    img.setRGB(x, y, pix);
-                    ind++;
-                }
-            }
-
-            raf.close();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
 }

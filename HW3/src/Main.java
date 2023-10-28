@@ -1,6 +1,7 @@
 public class Main {
     private static final int WIDTH = 512;
     private static final int HEIGHT = 512;
+    private static final int MAX_LEVEL = 9;
 
     public static void main(String[] args) {
         if (args.length != 2) {
@@ -28,53 +29,72 @@ public class Main {
     public static void executeCompression(String imagePath, int level) {
         System.out.println("Starting compression for " + imagePath + " at n = " + level);
 
-        // byte[][][] image = ImageHandler.readImageRGB(imagePath);
-        // System.out.println("R: " + image[0][0][0] + ", G: " + image[0][0][1] + ", B:
-        // " + image[0][0][2]);
+        // DWT.progressiveDecoding(transformedImage, level);
 
-        // float[][][] transformedImage = DWT.forwardDWT(image, level);
-        // System.out.println("R: " + transformedImage[0][0][0] + ", G: " +
-        // transformedImage[0][0][1] + ", B: "
-        // + transformedImage[0][0][2]);
+        byte[][][] image = ImageIO.initByteArray(imagePath);
 
-        // float[][][] reconstructedImage = DWT.inverseDWT(transformedImage, level);
-        // System.out.println("R: " + reconstructedImage[0][0][0] + ", G: " +
-        // reconstructedImage[0][0][1] + ", B: "
-        // + reconstructedImage[0][0][2]);
-
-        byte[][][] image = ImageHandler.readImageRGB(imagePath);
         float[][][] floatImage = byteToFloat(image);
-
-        float[][][] transformedImage = new float[WIDTH][HEIGHT][3];
         for (int c = 0; c < 3; c++) {
-            float[][] blah = new float[WIDTH][HEIGHT];
-            for (int x = 0; x < WIDTH; x++) {
-                for (int y = 0; y < HEIGHT; y++) {
-                    blah[x][y] = floatImage[x][y][c];
+            float[][] blah = new float[HEIGHT][WIDTH];
+            for (int h = 0; h < HEIGHT; h++) {
+                for (int w = 0; w < WIDTH; w++) {
+                    blah[h][w] = floatImage[h][w][c];
                 }
             }
-            float[][] blaah = DWT.recursiveDWT(blah, c, 0, level);
-            for (int x = 0; x < WIDTH; x++) {
-                for (int y = 0; y < HEIGHT; y++) {
-                    transformedImage[x][y][c] = blaah[x][y];
+            blah = DWT.recursiveDWT(blah, c, level, MAX_LEVEL);
+            // blah = DWT.zeroHighPassCoefficients(blah, c);
+            for (int h = 0; h < HEIGHT; h++) {
+                for (int w = 0; w < WIDTH; w++) {
+                    floatImage[h][w][c] = blah[h][w];
                 }
             }
         }
 
-        DWT.progressiveDecoding(transformedImage, level);
+        float[][][] reconstructedImage = new float[HEIGHT][WIDTH][3];
+        for (int c = 0; c < 3; c++) {
+            float[][] blah = new float[HEIGHT][WIDTH];
+            for (int h = 0; h < HEIGHT; h++) {
+                for (int w = 0; w < WIDTH; w++) {
+                    blah[h][w] = floatImage[h][w][c];
+                }
+            }
+            blah = DWT.recursiveInverseDWT(blah, c, level, MAX_LEVEL);
+            for (int h = 0; h < HEIGHT; h++) {
+                for (int w = 0; w < WIDTH; w++) {
+                    reconstructedImage[h][w][c] = blah[h][w];
+                }
+            }
+        }
+
+        byte[][][] finalImage = floatToByte(reconstructedImage);
+        ImageIO.showImage(finalImage);
     }
 
     private static float[][][] byteToFloat(byte[][][] image) {
-        float[][][] floatImage = new float[WIDTH][HEIGHT][3];
+        float[][][] floatImage = new float[HEIGHT][WIDTH][3];
 
-        for (int x = 0; x < WIDTH; x++) {
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int channel = 0; channel < 3; channel++) {
-                    floatImage[x][y][channel] = (float) (image[x][y][channel] & 0xFF); // Convert byte to unsigned value
+        for (int h = 0; h < HEIGHT; h++) {
+            for (int w = 0; w < WIDTH; w++) {
+                for (int c = 0; c < 3; c++) {
+                    floatImage[h][w][c] = (image[h][w][c] & 0xFF) / 255.0f;
                 }
             }
         }
+
         return floatImage;
     }
 
+    private static byte[][][] floatToByte(float[][][] floatImage) {
+        byte[][][] image = new byte[HEIGHT][WIDTH][3];
+
+        for (int h = 0; h < HEIGHT; h++) {
+            for (int w = 0; w < WIDTH; w++) {
+                for (int c = 0; c < 3; c++) {
+                    image[h][w][c] = (byte) Math.min(255, Math.max(0, Math.round(floatImage[h][w][c] * 255)));
+                }
+            }
+        }
+
+        return image;
+    }
 }
