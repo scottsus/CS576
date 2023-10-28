@@ -18,8 +18,8 @@ public class Main {
             return;
         }
 
-        if (level < 0 || level > 9) {
-            System.err.println("Level must be between 0 and 9");
+        if (level < -1 || level > 9) {
+            System.err.println("Level must be between -1 and 9");
             return;
         }
 
@@ -28,46 +28,64 @@ public class Main {
 
     public static void executeCompression(String imagePath, int level) {
         System.out.println("Starting compression for " + imagePath + " at n = " + level);
-
-        // DWT.progressiveDecoding(transformedImage, level);
-
         byte[][][] image = ImageIO.initByteArray(imagePath);
 
+        if (level >= 0) {
+            performSingleLevelCompression(image, level);
+            return;
+        }
+
+        performProgressiveCompression(image, level);
+    }
+
+    private static void performSingleLevelCompression(byte[][][] image, int level) {
         float[][][] floatImage = byteToFloat(image);
         for (int c = 0; c < 3; c++) {
-            float[][] blah = new float[HEIGHT][WIDTH];
+            float[][] channel = new float[HEIGHT][WIDTH];
             for (int h = 0; h < HEIGHT; h++) {
                 for (int w = 0; w < WIDTH; w++) {
-                    blah[h][w] = floatImage[h][w][c];
+                    channel[h][w] = floatImage[h][w][c];
                 }
             }
-            blah = DWT.recursiveDWT(blah, c, level, MAX_LEVEL);
+            channel = DWT.recursiveDWT(channel, c, level, MAX_LEVEL);
             // blah = DWT.zeroHighPassCoefficients(blah, c);
             for (int h = 0; h < HEIGHT; h++) {
                 for (int w = 0; w < WIDTH; w++) {
-                    floatImage[h][w][c] = blah[h][w];
+                    floatImage[h][w][c] = channel[h][w];
                 }
             }
         }
 
         float[][][] reconstructedImage = new float[HEIGHT][WIDTH][3];
         for (int c = 0; c < 3; c++) {
-            float[][] blah = new float[HEIGHT][WIDTH];
+            float[][] channel = new float[HEIGHT][WIDTH];
             for (int h = 0; h < HEIGHT; h++) {
                 for (int w = 0; w < WIDTH; w++) {
-                    blah[h][w] = floatImage[h][w][c];
+                    channel[h][w] = floatImage[h][w][c];
                 }
             }
-            blah = DWT.recursiveInverseDWT(blah, c, level, MAX_LEVEL);
+            channel = DWT.recursiveInverseDWT(channel, c, level, MAX_LEVEL);
             for (int h = 0; h < HEIGHT; h++) {
                 for (int w = 0; w < WIDTH; w++) {
-                    reconstructedImage[h][w][c] = blah[h][w];
+                    reconstructedImage[h][w][c] = channel[h][w];
                 }
             }
         }
 
         byte[][][] finalImage = floatToByte(reconstructedImage);
         ImageIO.showImage(finalImage);
+    }
+
+    private static void performProgressiveCompression(byte[][][] image, int level) {
+        for (int i = level; i < 9; i++) {
+            System.out.println("Level: " + (i + 1));
+            performSingleLevelCompression(image, i);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                System.err.println("Interrupted!");
+            }
+        }
     }
 
     private static float[][][] byteToFloat(byte[][][] image) {
