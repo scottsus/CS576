@@ -13,4 +13,5 @@ No errors are expected 😊
 
 ## Demo
 
-<video width='400' height='600' src='https://drive.google.com/file/d/1qfPPCS3famfTBMXq0IVW-jeD7kv756l6/view?usp=drive_link'></video>
+https://github.com/scottsus/CS576/assets/88414565/5c62c983-0cb1-490f-aff6-49d7c7929fba
+
